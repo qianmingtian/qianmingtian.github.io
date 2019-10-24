@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>tcp粘包和拆包的原因及处理方案</title>
+        
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+        
+        <style>
+.task-list-item { list-style-type: none; } .task-list-item-checkbox { margin-left: -20px; vertical-align: middle; }
+</style>
+        <style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        
+        
+    </head>
+    <body class="vscode-light">
+        <!--
+ * @Author: 千铭天
+ * @Date: 2019-10-24 22:29:36
+ * @LastEditors: 
+ * @LastEditTime: 2019-10-24 23:14:22
+ * @Description:  
+ -->
+<h1 id="tcp%e7%b2%98%e5%8c%85%e5%92%8c%e6%8b%86%e5%8c%85%e7%9a%84%e5%8e%9f%e5%9b%a0%e5%8f%8a%e5%a4%84%e7%90%86%e6%96%b9%e6%a1%88">tcp粘包和拆包的原因及处理方案</h1>
+<h2 id="%e7%b2%98%e5%8c%85%e7%9a%84%e6%83%85%e5%86%b5%e7%a4%ba%e6%84%8f">粘包的情况示意</h2>
+<blockquote>
+<p><img src="https://images2015.cnblogs.com/blog/839956/201703/839956-20170303141040391-1377466796.png" alt="TCP粘包示意图">
+服务端不知道在该数据包中第一条消息从哪儿结束和第二条消息从哪儿开始，这种情况其实是发生了TCP粘包。
+<img src="https://images2015.cnblogs.com/blog/839956/201703/839956-20170303141209985-617401891.png" alt="TCP粘包示意图">
+服务端一共收到了两个数据包，第一个数据包只包含了第一条消息的一部分，第一条消息的后半部分和第二条消息都在第二个数据包中，或者是第一个数据包包含了第一条消息的完整信息和第二条消息的一部分信息，第二个数据包包含了第二条消息的剩下部分，这种情况其实是发送了TCP拆，因为发生了一条消息被拆分在两个包里面发送了，</p>
+</blockquote>
+<h2 id="%e4%ba%a7%e7%94%9ftcp%e7%b2%98%e5%8c%85%e5%92%8c%e6%8b%86%e5%8c%85%e7%9a%84%e5%8e%9f%e5%9b%a0">产生tcp粘包和拆包的原因</h2>
+<p>我们知道tcp是以流动的方式传输数据，传输的最小单位为一个报文段（segment）。tcp Header中有个Options标识位，常见的标识为mss(Maximum Segment Size)指的是，连接层每次传输的数据有个最大限制MTU(Maximum Transmission Unit)，一般是1500比特，超过这个量要分成多个报文段，mss则是这个最大限制减去TCP的header，光是要传输的数据的大小，一般为1460比特。换算成字节，也就是180多字节。</p>
+<p>tcp为提高性能，发送端会将需要发送的数据发送到缓冲区，等待缓冲区满了之后，再将缓冲中的数据发送到接收方。同理，接收方也有缓冲区这样的机制，来接收数据。</p>
+<p><strong>粘包应该是多个小的消息数据被封装在一个数据包里面</strong>，产生的原因如下：
+<strong>在流传输中出现粘包，UDP不会出现粘包，因为UDP有<a href="%E6%B6%88%E6%81%AF%E8%BE%B9%E7%95%8C.md">消息边界</a></strong></p>
+<ul>
+<li>应用程序写入数据小于套接字缓冲区大小，网卡将应用多次写入的数据发送到网络上，这将会发生粘包。
+<ul>
+<li>发送方引起的粘包是由TCP协议本身造成的，TCP为提高传输效率，发送方往往要收集到足够多的数据后才发送一包数据。若连续几次发送的数据都很少，通常TCP会根据优化算法把这些数据合成一包后一次发送出去，这样接收方就收到了粘包数据。</li>
+</ul>
+</li>
+<li>接收方法不及时读取套接字缓冲区数据，这将发生粘包。
+<ul>
+<li>接收方引起的粘包是由于接收方用户进程不及时接收数据，从而导致粘包现象。这是因为接收方先把收到的数据放在系统接收缓冲区，用户进程从该缓冲区取数据，若下一包数据到达时前一包数据尚未被用户进程取走，则下一包数据放到系统接收缓冲区时就接到前一包数据之后，而用户进程根据预先设定的缓冲区大小从系统接收缓冲区取数据，这样就一次取到了多包数据。</li>
+</ul>
+</li>
+<li>……</li>
+</ul>
+<p>拆包产生的原因如下：</p>
+<ul>
+<li>应用程序写入的数据大于套接字缓冲区大小，这将会发生拆包。、</li>
+<li>进行mss（最大报文长度）大小的TCP分段，当TCP报文长度-TCP头部长度&gt;mss的时候将发生拆包</li>
+</ul>
+<h2 id="%e5%a6%82%e4%bd%95%e8%a7%a3%e5%86%b3%e6%8b%86%e5%8c%85%e7%b2%98%e5%8c%85">如何解决拆包粘包</h2>
+<p>既然知道了tcp是无界的数据流，且协议本身无法避免粘包，拆包的发生，那我们只能在应用层数据协议上，加以控制。通常在制定传输数据时，可以使用如下方法：</p>
+<ul>
+<li>
+<p>使用带消息头的协议、消息头存储消息开始标识及消息长度信息，服务端获取消息头的时候解析出消息长度，然后向后读取该长度的内容。</p>
+</li>
+<li>
+<p>设置定长消息，服务端每次读取既定长度的内容作为一条完整消息。</p>
+</li>
+<li>
+<p>设置消息边界，服务端从网络流中按消息编辑分离出消息内容。</p>
+<p>a)先基于第三种方法，假设区分数据边界的标识为换行符&quot;\n&quot;（注意请求数据本身内部不能包含换行符），数据格式为Json，例如下面是一个符合这个规则的请求包。</p>
+<pre><code>  {&quot;type&quot;:&quot;message&quot;,&quot;content&quot;:&quot;hello&quot;}\n注意上面的请求数据末尾有一个换行字符(在PHP中用双引号字符串&quot;\n&quot;表示)，代表一个请求的结束。
+</code></pre>
+<p>b)基于第一种方法，可以制定，首部固定10个字节长度用来保存整个数据包长度，位数不够补0的数据协议</p>
+<pre><code>  0000000036{&quot;type&quot;:&quot;message&quot;,&quot;content&quot;:&quot;hello&quot;}
+</code></pre>
+<p>c)基于第一种方法，可以制定，首部4字节网络字节序unsigned int，标记整个包的长度
+****{&quot;type&quot;:&quot;message&quot;,&quot;content&quot;:&quot;hello all&quot;}其中首部四字节*号代表一个网络字节序的unsigned int数据，为不可见字符，紧接着是Json的数据格式的包体数据。</p>
+</li>
+</ul>
+<h2 id="%e5%8f%82%e8%80%83%e8%b5%84%e6%96%99">参考资料</h2>
+<ol>
+<li><a href="https://www.cnblogs.com/hpu001/p/9925573.html">tcp粘包和拆包的原因及处理方案</a></li>
+<li><a href="https://www.cnblogs.com/kex1n/p/6502002.html">TCP粘包问题分析和解决（全）</a></li>
+</ol>
+<p><a href="%E6%B6%88%E6%81%AF%E8%BE%B9%E7%95%8C.md">上一篇</a></p>
+<p><a href="list.md">目录</a></p>
+<p><a href="">下一篇</a></p>
+
+    </body>
+    </html>
