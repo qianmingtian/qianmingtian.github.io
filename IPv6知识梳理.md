@@ -1,14 +1,18 @@
+[TOC]
 <!--
  * @Author: 千铭天
  * @Date: 2019-10-29 21:19:00
  * @LastEditors: 
- * @LastEditTime: 2019-10-29 21:42:54
+ * @LastEditTime: 2019-10-29 21:46:56
  * @Description:  
  -->
+ 1. Pv6
+   1. 地址简化规则
+   2. URL访问
+   3. Ipv6接口标识符
 
 # Pv6
 
-[TOC]
 
 >ipv6地址长度128位，表示方法采用**块**或**字段**的四个十六进制数。
 
